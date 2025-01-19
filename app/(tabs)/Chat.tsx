@@ -92,7 +92,7 @@ const ChatInterface: React.FC = () => {
 
   const genAI = new GoogleGenerativeAI("AIzaSyCEaSfr3QRu7xOkt5kMe5DlTxfSqW523Co");
   const model = genAI.getGenerativeModel({
-    model: isMalayalamMode ? "gemini-1.5-pro" : "gemini-1.5-flash-8b",
+    model: isMalayalamMode ? "gemini-1.5-pro" : "gemini-1.5-flash",
     systemInstruction: isMalayalamMode
       ? "You are a compassionate drug rehabilitation counselor. Provide supportive, non-judgmental guidance to help people overcome drug addiction. Focus on harm reduction, recovery strategies, and connecting people with professional help. Never give medical advice. Always encourage seeking professional medical and psychiatric help. If someone is in immediate danger, direct them to emergency services. Reply in Malayalam. Use the following information to assist the user: " + assessmentHistory
       : "You are a compassionate drug rehabilitation counselor. Provide supportive, non-judgmental guidance to help people overcome drug addiction. Focus on harm reduction, recovery strategies, and connecting people with professional help. Never give medical advice. Always encourage seeking professional medical and psychiatric help. If someone is in immediate danger, direct them to emergency services. Make it precise, easy to read, concise and engaging. If the input is in Manglish, reply to me in Manglish too. Use the following information to assist the user: " + assessmentHistory
