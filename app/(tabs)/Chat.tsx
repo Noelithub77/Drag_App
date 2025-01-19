@@ -1,8 +1,9 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, Image, ScrollView, Animated, ActivityIndicator } from "react-native";
 import '../../global.css';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Markdown from 'react-native-markdown-display';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LoadingDots = () => {
   const dots = useRef([
@@ -72,13 +73,29 @@ const ChatInterface: React.FC = () => {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [showMenu, setShowMenu] = useState(true);
   const [isMalayalamMode, setIsMalayalamMode] = useState(false);
+  const [assessmentHistory, setAssessmentHistory] = useState<string>("");
+
+  useEffect(() => {
+    const fetchAssessmentAnswers = async () => {
+      try {
+        const storedAnswers = await AsyncStorage.getItem('assessmentAnswers');
+        if (storedAnswers) {
+          setAssessmentHistory(storedAnswers);
+        }
+      } catch (error) {
+        console.error('Failed to fetch assessment answers from local storage', error);
+      }
+    };
+
+    fetchAssessmentAnswers();
+  }, []);
 
   const genAI = new GoogleGenerativeAI("AIzaSyCEaSfr3QRu7xOkt5kMe5DlTxfSqW523Co");
   const model = genAI.getGenerativeModel({
     model: isMalayalamMode ? "gemini-1.5-pro" : "gemini-1.5-flash-8b",
     systemInstruction: isMalayalamMode
-      ? "You are a compassionate drug rehabilitation counselor. Provide supportive, non-judgmental guidance to help people overcome drug addiction. Focus on harm reduction, recovery strategies, and connecting people with professional help. Never give medical advice. Always encourage seeking professional medical and psychiatric help. If someone is in immediate danger, direct them to emergency services. Reply in Malayalam."
-      : "You are a compassionate drug rehabilitation counselor. Provide supportive, non-judgmental guidance to help people overcome drug addiction. Focus on harm reduction, recovery strategies, and connecting people with professional help. Never give medical advice. Always encourage seeking professional medical and psychiatric help. If someone is in immediate danger, direct them to emergency services. Make it precise, easy to read, concise and engaging. If the input is in Manglish, reply to me in Manglish too."
+      ? "You are a compassionate drug rehabilitation counselor. Provide supportive, non-judgmental guidance to help people overcome drug addiction. Focus on harm reduction, recovery strategies, and connecting people with professional help. Never give medical advice. Always encourage seeking professional medical and psychiatric help. If someone is in immediate danger, direct them to emergency services. Reply in Malayalam. Use the following information to assist the user: " + assessmentHistory
+      : "You are a compassionate drug rehabilitation counselor. Provide supportive, non-judgmental guidance to help people overcome drug addiction. Focus on harm reduction, recovery strategies, and connecting people with professional help. Never give medical advice. Always encourage seeking professional medical and psychiatric help. If someone is in immediate danger, direct them to emergency services. Make it precise, easy to read, concise and engaging. If the input is in Manglish, reply to me in Manglish too. Use the following information to assist the user: " + assessmentHistory
   });
 
   async function getChatResponse(message: string) {
@@ -86,11 +103,7 @@ const ChatInterface: React.FC = () => {
         history: [
             {
                 role: "user",
-                parts: [{ text: "Hello" }],
-            },
-            {
-                role: "model",
-                parts: [{ text: "Great to meet you. What would you like to know?" }],
+                parts: [{ text: assessmentHistory }],
             },
         ],
     });
