@@ -25,7 +25,7 @@ import { db } from '../../firebaseConfig';
 import { collection, addDoc, GeoPoint } from 'firebase/firestore';
 import { Link } from "expo-router";
 
-const MapPreview = () => {
+const MapPreview = ({ onRegionChange }: { onRegionChange: (region: Region) => void }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -116,7 +116,10 @@ const MapPreview = () => {
       showsMyLocationButton={true}
       initialRegion={region}
       region={region}
-      onRegionChangeComplete={(region) => setRegion(region)} // Changed to onRegionChangeComplete for better performance
+      onRegionChangeComplete={(region) => {
+        setRegion(region);
+        onRegionChange(region);
+      }} // Changed to onRegionChangeComplete for better performance
     />
   );
 };
@@ -168,6 +171,7 @@ const ReportPage: React.FC = () => {
   const scrollViewRef = useRef<ScrollView>(null);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [audioDuration, setAudioDuration] = useState<number>(0);
+  const [reportRegion, setReportRegion] = useState<Region | null>(null);
 
   const takePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -262,16 +266,20 @@ const ReportPage: React.FC = () => {
     );
   };
 
+  const handleRegionChange = (region: Region) => {
+    setReportRegion(region);
+  };
+
   const handleSubmit = async () => {
     try {
       console.log("clicked")
       const reportData: any = {};
 
-      if (region) {
-        console.log(region)
+      if (reportRegion) {
+        console.log(reportRegion)
         reportData.location = {
-          latitude: region.latitude,
-          longitude: region.longitude
+          latitude: reportRegion.latitude,
+          longitude: reportRegion.longitude
         };
       } else {
         alert('Location is not available');
@@ -320,7 +328,7 @@ const ReportPage: React.FC = () => {
 
               {/* Map Preview */}
               <View style={{ height: 200, marginBottom: 24 }}>
-              <MapPreview />
+              <MapPreview onRegionChange={handleRegionChange} />
               {/* Map Markers */}
               <View className="absolute top-1/2 left-1/2 -translate-x-2 -translate-y-2">
                 <View className="w-4 h-4 bg-orange-400 rounded-full border-2 border-white" />
