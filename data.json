@@ -1,0 +1,21 @@
+[
+    {
+      "id": 1,
+      "title": "Cannabis",
+      "description": "A psychoactive drug secondarily used for recreational purposes. Known for increasing empathy, pleasure, and energy.",
+      "image": "../../assets/images/Cannabis.png"
+    },
+    {
+      "id": 2,
+      "title": "Caffeine",
+      "description": "A stimulant commonly found in coffee and tea, used to boost energy and alertness.",
+      "image": "../../assets/images/Caffeine.png"
+    },
+    {
+      "id": 3,
+      "title": "Nicotine",
+      "description": "A highly addictive stimulant found in tobacco products.",
+      "image": "../../assets/images/Nicotine.png"
+    }
+  ]
+  
