@@ -12,7 +12,7 @@ const transporter = nodemailer.createTransport({
 
   // Set up email data
   let mailOptions = {
-    from: "draigon_guardian_alert@outlook.com", // Sender address
+    from: "draigon.guardianalert@gmail.com", // Sender address
     to: to, // List of receivers
     subject: subject, // Subject line
     text: text, // Plain text body
@@ -28,5 +28,5 @@ const transporter = nodemailer.createTransport({
 }
 
 
-sendEmail("noelmcv7@gmail.com", "alert", "your apprentice has turned to the darkside");
+sendEmail("noelmcv7@gmail.com", "ALERT!!", "⚠️ Warning: Looks like the person you’ve appointed has stepped off track and is involved with drugs again. Please step in and help them get back on the right path.");
 export { sendEmail};
