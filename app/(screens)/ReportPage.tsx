@@ -181,8 +181,6 @@ const ReportPage: React.FC = () => {
 
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: 'images',
-      allowsEditing: true,
-      aspect: [4, 3],
       quality: 1,
       exif: false,
     });
@@ -207,7 +205,6 @@ const ReportPage: React.FC = () => {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: 'images',
-      allowsEditing: true,
       quality: 1,
       exif: false,
     });
@@ -257,15 +254,17 @@ const ReportPage: React.FC = () => {
           linearPCMIsFloat: false,
         },
         web: {
-          mimeType: 'audio/webm',
+          mimeType: 'audio/mp4',
           bitsPerSecond: 128000,
         },
       };
 
+      console.log('Starting audio recording with options:', recordingOptions);
       const { recording } = await Audio.Recording.createAsync(recordingOptions);
       setRecording(recording);
     } catch (err) {
       console.error('Failed to start recording', err);
+      alert(`Failed to start recording: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
@@ -274,6 +273,36 @@ const ReportPage: React.FC = () => {
     await recording?.stopAndUnloadAsync();
     const uri = recording?.getURI();
     setAudioUri(uri || null);
+
+    if (uri) {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(uri);
+        
+        // Try to get the file extension from the URI
+        const extension = uri.split('.').pop()?.toLowerCase();
+        
+        // Log detailed information about the audio file
+        console.log('Audio recording completed:', {
+          uri,
+          exists: fileInfo.exists,
+          size: fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 'unknown',
+          extension: extension || 'unknown',
+          platform: Platform.OS,
+          // On iOS, the URI typically looks like: file:///var/mobile/Containers/Data/Application/...
+          // On Android, it typically looks like: file:///data/user/0/com.yourapp/cache/...
+          isFileUri: uri.startsWith('file://'),
+          isContentUri: uri.startsWith('content://'),
+          isAssetUri: uri.startsWith('asset://'),
+        });
+        
+        // For iOS, the file extension might not be in the URI
+        if (Platform.OS === 'ios' && (!extension || extension.length > 4)) {
+          console.log('iOS audio file detected, using m4a extension');
+        }
+      } catch (error) {
+        console.error('Error getting audio file info:', error);
+      }
+    }
 
     const { status } = await Audio.Sound.createAsync(
       { uri: uri as string },
@@ -309,18 +338,84 @@ const ReportPage: React.FC = () => {
 
   const processAndUploadImage = async (imageUri: string): Promise<string | null> => {
     try {
+      console.log('Processing image URI:', imageUri);
+      
       const fileInfo = await FileSystem.getInfoAsync(imageUri);
       const fileSize = fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 0;
       
+      // Get proper file extension and MIME type
+      let fileExt = imageUri.split('.').pop()?.toLowerCase();
       
-      const quality = fileSize > 5 * 1024 * 1024 ? 0.5 : 1;
+      // Check if we have a valid extension from the URI
+      const validImageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
       
-      const fileExt = imageUri.split('.').pop();
+      // If no extension or invalid extension, try to determine from URI content
+      if (!fileExt || !validImageExts.includes(fileExt)) {
+        // For iOS, the URI might be like: file:///var/mobile/Containers/Data/Application/...
+        // For Android, it might be like: file:///data/user/0/com.yourapp/cache/...
+        
+        // Check if the URI contains image type info
+        if (imageUri.includes('image/jpeg') || imageUri.includes('image/jpg')) {
+          fileExt = 'jpg';
+        } else if (imageUri.includes('image/png')) {
+          fileExt = 'png';
+        } else if (imageUri.includes('image/gif')) {
+          fileExt = 'gif';
+        } else if (imageUri.includes('image/webp')) {
+          fileExt = 'webp';
+        } else {
+          // Default to jpg for most common case
+          fileExt = 'jpg';
+        }
+      }
+      
+      // Determine correct MIME type based on extension
+      let contentType = 'image/jpeg';
+      if (fileExt === 'png') {
+        contentType = 'image/png';
+      } else if (fileExt === 'gif') {
+        contentType = 'image/gif';
+      } else if (fileExt === 'webp') {
+        contentType = 'image/webp';
+      } else if (fileExt === 'heic' || fileExt === 'heif') {
+        contentType = 'image/heic';
+      }
+      
+      // Read a small chunk to detect MIME type from file header
+      const sampleChunk = await FileSystem.readAsStringAsync(imageUri, {
+        encoding: FileSystem.EncodingType.Base64,
+        length: 1024, // Just need a small sample
+        position: 0,
+      });
+      
+      // Try to detect MIME type from file header
+      const detectedMimeType = detectMimeType(sampleChunk);
+      if (detectedMimeType) {
+        contentType = detectedMimeType;
+        // Update extension based on detected MIME type
+        if (detectedMimeType === 'image/jpeg') {
+          fileExt = 'jpg';
+        } else if (detectedMimeType === 'image/png') {
+          fileExt = 'png';
+        } else if (detectedMimeType === 'image/gif') {
+          fileExt = 'gif';
+        } else if (detectedMimeType === 'image/webp') {
+          fileExt = 'webp';
+        }
+      }
+      
       const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `reports/${fileName}`;
-
       
-      const chunkSize = 512 * 1024; 
+      console.log('Image details:', {
+        originalUri: imageUri,
+        determinedExtension: fileExt,
+        contentType: contentType,
+        detectedMimeType: detectedMimeType || 'none',
+        fileSize: fileSize / 1024 / 1024 + 'MB'
+      });
+      
+      // Read file in chunks to handle large files
+      const chunkSize = 512 * 1024;
       let base64Data = '';
       let offset = 0;
       
@@ -334,64 +429,158 @@ const ReportPage: React.FC = () => {
         offset += chunkSize;
       }
 
+      console.log('Attempting to upload image:', {
+        fileName,
+        fileSize: fileSize / 1024 / 1024 + 'MB',
+        fileType: contentType
+      });
+
       const { data: storageData, error: storageError } = await supabase
         .storage
         .from('reports')
-        .upload(filePath, decode(base64Data), {
-          contentType: `image/${fileExt}`,
-          cacheControl: '3600',
-          upsert: false
+        .upload(fileName, decode(base64Data), {
+          contentType: contentType,
+          upsert: true
         });
 
       if (storageError) {
-        console.error('Error uploading image:', storageError);
-        return null;
+        console.log('Storage error:', storageError);
+        console.error('Storage error:', storageError);
+        console.error('Supabase storage error:', {
+          message: storageError.message,
+          name: storageError.name,
+          stack: storageError.stack
+        });
+        throw new Error(`Storage error: ${storageError.message}`);
       }
+
+      console.log('Image upload successful:', storageData);
 
       const { data: urlData } = supabase
         .storage
         .from('reports')
-        .getPublicUrl(filePath);
+        .getPublicUrl(fileName);
       
       return urlData.publicUrl;
     } catch (error) {
       console.error('Error processing image:', error);
+      alert(`Failed to upload image: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return null;
     }
   };
 
   const processAndUploadAudio = async (audioUri: string): Promise<string | null> => {
     try {
-      const fileExt = 'mp4';
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `reports/audio/${fileName}`;
+      console.log('Processing audio URI:', audioUri);
+      
+      const fileInfo = await FileSystem.getInfoAsync(audioUri);
+      const fileSize = fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 0;
 
+      // For Expo Audio recordings, we know the format from our recording options
+      // Default to m4a which is what we set in startRecording
+      let fileExt = 'm4a';
+      let contentType = 'audio/mp4';
+      
+      // Try to extract extension from URI if possible
+      const uriExt = audioUri.split('.').pop()?.toLowerCase();
+      const validAudioExts = ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'mp4'];
+      
+      if (uriExt && validAudioExts.includes(uriExt)) {
+        fileExt = uriExt;
+        
+        // Set content type based on extension
+        if (fileExt === 'm4a' || fileExt === 'mp4') {
+          contentType = 'audio/mp4';
+        } else if (fileExt === 'mp3') {
+          contentType = 'audio/mpeg';
+        } else if (fileExt === 'wav') {
+          contentType = 'audio/wav';
+        } else if (fileExt === 'aac') {
+          contentType = 'audio/aac';
+        } else if (fileExt === 'ogg') {
+          contentType = 'audio/ogg';
+        }
+      } else {
+        // If we can't determine from URI, check if URI contains audio type info
+        if (audioUri.includes('audio/mp4') || audioUri.includes('audio/m4a')) {
+          fileExt = 'm4a';
+          contentType = 'audio/mp4';
+        } else if (audioUri.includes('audio/mpeg') || audioUri.includes('audio/mp3')) {
+          fileExt = 'mp3';
+          contentType = 'audio/mpeg';
+        } else if (audioUri.includes('audio/wav')) {
+          fileExt = 'wav';
+          contentType = 'audio/wav';
+        } else if (audioUri.includes('audio/aac')) {
+          fileExt = 'aac';
+          contentType = 'audio/aac';
+        }
+        // Otherwise stick with our default m4a
+      }
+
+      // For audio, we don't need to read in chunks as they're typically smaller
       const base64 = await FileSystem.readAsStringAsync(audioUri, {
         encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      // Try to detect MIME type from file header
+      const detectedMimeType = detectMimeType(base64.substring(0, 20));
+      if (detectedMimeType) {
+        contentType = detectedMimeType;
+        // Update extension based on detected MIME type
+        if (detectedMimeType === 'audio/mp4') {
+          fileExt = 'm4a';
+        } else if (detectedMimeType === 'audio/mpeg') {
+          fileExt = 'mp3';
+        } else if (detectedMimeType === 'audio/wav') {
+          fileExt = 'wav';
+        }
+      }
+
+      const fileName = `${Date.now()}.${fileExt}`;
+
+      console.log('Audio details:', {
+        originalUri: audioUri,
+        determinedExtension: fileExt,
+        contentType: contentType,
+        detectedMimeType: detectedMimeType || 'none',
+        fileSize: fileSize / 1024 / 1024 + 'MB'
+      });
+
+      console.log('Attempting to upload audio:', {
+        fileName,
+        fileSize: fileSize / 1024 / 1024 + 'MB',
+        fileType: contentType
       });
 
       const { data: storageData, error: storageError } = await supabase
         .storage
         .from('reports')
-        .upload(filePath, decode(base64), {
-          contentType: 'audio/mp4',
-          cacheControl: '3600',
-          upsert: false
+        .upload(fileName, decode(base64), {
+          contentType: contentType,
+          upsert: true
         });
 
       if (storageError) {
-        console.error('Error uploading audio:', storageError);
-        return null;
+        console.error('Supabase storage error:', {
+          message: storageError.message,
+          name: storageError.name,
+          stack: storageError.stack
+        });
+        throw new Error(`Storage error: ${storageError.message}`);
       }
+
+      console.log('Audio upload successful:', storageData);
 
       const { data: urlData } = supabase
         .storage
         .from('reports')
-        .getPublicUrl(filePath);
+        .getPublicUrl(fileName);
       
       return urlData.publicUrl;
     } catch (error) {
       console.error('Error processing audio:', error);
+      alert(`Failed to upload audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return null;
     }
   };
@@ -408,10 +597,7 @@ const ReportPage: React.FC = () => {
         return false;
       }
 
-      if (!description.trim()) {
-        alert('Please provide a description of the report.');
-        return false;
-      }
+  
 
       const reportData: ReportData = {
         latitude: locationRegion.latitude,
@@ -513,6 +699,56 @@ const ReportPage: React.FC = () => {
     } catch (error) {
       console.error('Error decoding base64:', error);
       return base64;
+    }
+  };
+
+  // Helper function to detect MIME type from file header
+  const detectMimeType = (base64Data: string): string | null => {
+    try {
+      // Check the first few bytes of the file to determine its type
+      // This is a simple implementation - a more robust solution would check more signatures
+      const header = base64Data.substring(0, 20);
+      
+      // JPEG starts with /9j/
+      if (header.startsWith('/9j/')) {
+        return 'image/jpeg';
+      }
+      
+      // PNG starts with iVBORw0KGgo
+      if (header.startsWith('iVBORw0KGgo')) {
+        return 'image/png';
+      }
+      
+      // GIF starts with R0lGODlh or R0lGODdh
+      if (header.startsWith('R0lGODlh') || header.startsWith('R0lGODdh')) {
+        return 'image/gif';
+      }
+      
+      // WebP starts with UklGRl
+      if (header.startsWith('UklGRl')) {
+        return 'image/webp';
+      }
+      
+      // MP3 often starts with ID3 (SUQz)
+      if (header.startsWith('SUQz')) {
+        return 'audio/mpeg';
+      }
+      
+      // AAC/M4A often starts with AAAA
+      if (header.startsWith('AAAA')) {
+        return 'audio/mp4';
+      }
+      
+      // WAV starts with UklGRg
+      if (header.startsWith('UklGRg')) {
+        return 'audio/wav';
+      }
+      
+      // If we can't determine the type, return null
+      return null;
+    } catch (error) {
+      console.error('Error detecting MIME type:', error);
+      return null;
     }
   };
 

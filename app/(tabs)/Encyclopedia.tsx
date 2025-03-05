@@ -169,7 +169,7 @@ const Encyclopedia = () => {
       href={{
         pathname: "/DisplayCard",
         params: {
-          image: item.resolvedUri, // Pass resolved URI to DisplayCard
+          image: item.resolvedUri, 
           title: item.title,
           description: item.description,
           category: item.category,
@@ -186,7 +186,7 @@ const Encyclopedia = () => {
         style={{ width: width - 64, height: 530 }}
       >
         <Image
-          source={item.image} // Use require for rendering in the current card
+          source={item.image} 
           style={{
             width: "100%",
             height: 200,
@@ -250,21 +250,43 @@ const Encyclopedia = () => {
       </View>
 
       {/* Content */}
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} className="px-4 py-4">
-        <FlatList
-          data={data}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          snapToInterval={width - 40}
-          decelerationRate="fast"
-          onMomentumScrollEnd={onScroll}
-          contentContainerStyle={{ paddingHorizontal: 10 }}
-          ItemSeparatorComponent={() => <View style={{ width: 20 }} />} // Add spacing between cards
-        />
-        <View className="flex-row justify-center mb-4">
+      <View className="flex-1 px-4 py-4 flex-col justify-between">
+        <View className="flex-1">
+          <FlatList
+            data={data}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={width - 40}
+            snapToAlignment="center"
+            decelerationRate={0.8}
+            onMomentumScrollEnd={onScroll}
+            contentContainerStyle={{ 
+              paddingHorizontal: width / 2 - (width - 80) / 2,
+            }}
+            ItemSeparatorComponent={() => <View style={{ width: 20 }} />}
+            bounces={true}
+            bouncesZoom={true}
+            showsVerticalScrollIndicator={false}
+            fadingEdgeLength={100}
+            overScrollMode="never"
+            scrollEventThrottle={16}
+            onScroll={(e) => {
+              onScroll(e);
+              // Add subtle scale effect based on scroll position
+              const scrollX = e.nativeEvent.contentOffset.x;
+              const slideSize = e.nativeEvent.layoutMeasurement.width;
+              const currentIndex = Math.floor(scrollX / slideSize);
+              const offset = scrollX - currentIndex * slideSize;
+              const percent = offset / slideSize;
+              
+              // Animation logic can be expanded here if needed
+            }}
+          />
+        </View>
+        <View className="flex-row justify-center py-4">
           {data.map((_, index) => (
             <View
               key={index}
@@ -274,7 +296,7 @@ const Encyclopedia = () => {
             />
           ))}
         </View>
-      </ScrollView>
+      </View>
     </View>
   );
 };
