@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Platform, Image } from "react-native";
-import { MapPin, Settings } from "lucide-react-native";
+import { MapPin, Settings, RefreshCw } from "lucide-react-native";
 import { Stack } from "expo-router";
 import MapView, { Heatmap, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { db } from '../../firebaseConfig';
-import { collection, getDocs } from 'firebase/firestore';
+import { supabase } from '../../supabaseConfig';
 
 interface ReportLocation {
   id: string;
@@ -35,11 +34,22 @@ const MapPreview = ({ recentReports }: { recentReports: ReportLocation[] }) => {
     (async () => {
       try {
         setIsLoading(true);
+        
+        // Check if location services are enabled
+        const locationEnabled = await Location.hasServicesEnabledAsync();
+        if (!locationEnabled) {
+          console.error("Location services are not enabled");
+          setErrorMsg('Location services are not enabled. Please enable location services in your device settings.');
+          setIsLoading(false);
+          return;
+        }
+        
         const cachedLocation = await AsyncStorage.getItem('cachedLocation');
         const cachedRegion = await AsyncStorage.getItem('cachedRegion');
 
         if (cachedLocation && cachedRegion) {
-          setRegion(JSON.parse(cachedRegion));
+          const parsedRegion = JSON.parse(cachedRegion);
+          setRegion(parsedRegion);
           setIsLoading(false);
           return;
         }
@@ -53,21 +63,20 @@ const MapPreview = ({ recentReports }: { recentReports: ReportLocation[] }) => {
         var location = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.High
         });
-        setRegion({
+        
+        const newRegion = {
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
           latitudeDelta: 0.0005,
           longitudeDelta: 0.0005,
-        });
+        };
+        
+        setRegion(newRegion);
 
         await AsyncStorage.setItem('cachedLocation', JSON.stringify(location));
-        await AsyncStorage.setItem('cachedRegion', JSON.stringify({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          latitudeDelta: 0.0005,
-          longitudeDelta: 0.0005,
-        }));
+        await AsyncStorage.setItem('cachedRegion', JSON.stringify(newRegion));
       } catch (error) {
+        console.error('Error fetching location:', error);
         setErrorMsg('Could not fetch location');
       } finally {
         setIsLoading(false);
@@ -109,22 +118,24 @@ const MapPreview = ({ recentReports }: { recentReports: ReportLocation[] }) => {
         width: Dimensions.get('window').width, // Accounting for padding
         height: '100%',
       }}
-      provider={PROVIDER_GOOGLE}
+      provider={Platform.OS === 'ios' || Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
       showsUserLocation={true}
       showsMyLocationButton={true}
       initialRegion={region}
       region={region}
       onRegionChangeComplete={(region) => setRegion(region)} // Changed to onRegionChangeComplete for better performance
     >
-      <Heatmap
-        points={recentReports.map((report: ReportLocation) => ({
-          latitude: report.coordinates.latitude,
-          longitude: report.coordinates.longitude,
-          weight: 1,
-        }))}
-        radius={50}
-        opacity={0.7}
-      />
+      {recentReports && recentReports.length > 0 && (
+        <Heatmap
+          points={recentReports.map((report: ReportLocation) => ({
+            latitude: report.coordinates.latitude,
+            longitude: report.coordinates.longitude,
+            weight: 1,
+          }))}
+          radius={50}
+          opacity={0.7}
+        />
+      )}
     </MapView>
   );
 };
@@ -132,19 +143,86 @@ const MapPreview = ({ recentReports }: { recentReports: ReportLocation[] }) => {
 const PoliceReport: React.FC = () => {
   const [region, setRegion] = useState<Region | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [recentReports, setRecentReports] = useState<ReportLocation[]>([]);
+  const [statistics, setStatistics] = useState<Statistics>({
+    drugs: 0,
+    cases: 0,
+    reports: 0,
+  });
 
-  const statistics: Statistics = {
-    drugs: 17,
-    cases: 12,
-    reports: 43,
+  const fetchReports = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('reports')
+        .select('*');
+      
+      if (error) {
+        console.error('Error fetching reports:', error);
+        throw new Error('Could not fetch reports');
+      }
+
+      if (data && Array.isArray(data)) {
+        const reports: ReportLocation[] = data.map((report: any) => ({
+          id: report.id || `report-${Date.now()}-${Math.random()}`,
+          title: report.description || 'No title',
+          location: `Lat: ${report.latitude}, Lon: ${report.longitude}`,
+          icon: "📍",
+          coordinates: {
+            latitude: parseFloat(report.latitude) || 0,
+            longitude: parseFloat(report.longitude) || 0,
+          },
+          imageUrl: report.image_url || '', // Image URL from Supabase Storage
+        }));
+        
+        setRecentReports(reports);
+        
+        // Update statistics based on actual reports
+        setStatistics({
+          drugs: Math.floor(reports.length * 0.4), // Example: 40% of reports are drug-related
+          cases: Math.floor(reports.length * 0.3), // Example: 30% of reports are cases
+          reports: reports.length, // Total number of reports
+        });
+      } else {
+        console.warn('No reports data returned from Supabase or data is not an array');
+        setRecentReports([]);
+      }
+    } catch (error) {
+      console.error('Error fetching reports:', error);
+      throw error;
+    }
+  }, []);
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    
+    setIsRefreshing(true);
+    try {
+      await fetchReports();
+      alert('Reports refreshed successfully!');
+    } catch (error) {
+      console.error('Error refreshing reports:', error);
+      alert('Failed to refresh reports. Please try again.');
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   useEffect(() => {
     (async () => {
       try {
         setIsLoading(true);
+        
+        // Check if location services are enabled
+        const locationEnabled = await Location.hasServicesEnabledAsync();
+        if (!locationEnabled) {
+          console.error("Location services are not enabled");
+          setErrorMsg('Location services are not enabled. Please enable location services in your device settings.');
+          setIsLoading(false);
+          return;
+        }
+        
         let { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
           setErrorMsg('Permission to access location was denied');
@@ -154,40 +232,31 @@ const PoliceReport: React.FC = () => {
         let location = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.High
         });
-        setRegion({
+        
+        const newRegion = {
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
           latitudeDelta: 0.0005,
           longitudeDelta: 0.0005,
-        });
+        };
+        
+        setRegion(newRegion);
 
-        // Fetch recent reports from Firestore
-        const querySnapshot = await getDocs(collection(db, 'reports'));
-        const reports: ReportLocation[] = [];
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          if (data.location) {
-            reports.push({
-              id: doc.id,
-              title: data.description || 'No title',
-              location: `Lat: ${data.location.latitude}, Lon: ${data.location.longitude}`,
-              icon: "📍",
-              coordinates: {
-                latitude: data.location.latitude,
-                longitude: data.location.longitude,
-              },
-              imageUrl: data.imageUrl || '', // Assuming imageUrl is stored in Firestore
-            });
-          }
-        });
-        setRecentReports(reports);
+        // Fetch recent reports from Supabase
+        try {
+          await fetchReports();
+        } catch (supabaseError) {
+          console.error('Error querying Supabase:', supabaseError);
+          setErrorMsg('Failed to fetch reports from the database');
+        }
       } catch (error) {
-        setErrorMsg('Could not fetch location');
+        console.error('Error in PoliceReport useEffect:', error);
+        setErrorMsg('Could not fetch location or reports');
       } finally {
         setIsLoading(false);
       }
     })();
-  }, []);
+  }, [fetchReports]);
 
   if (isLoading) {
     return (
@@ -216,14 +285,32 @@ const PoliceReport: React.FC = () => {
         {/* Header */}
         <View className="flex-row justify-between items-center p-4">
           <Text className="text-2xl font-bold text-gray-800">Reports</Text>
-          <TouchableOpacity>
-            <Settings className="w-6 h-6 text-gray-600" />
-          </TouchableOpacity>
+          <View className="flex-row">
+            <TouchableOpacity 
+              onPress={handleRefresh} 
+              disabled={isRefreshing}
+              className="mr-4"
+            >
+              {isRefreshing ? (
+                <ActivityIndicator size="small" color="#FB923C" />
+              ) : (
+                <RefreshCw size={24} color="#4B5563" />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity>
+              <Settings size={24} color="#4B5563" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Heatmap Card */}
         <View className="mx-4 mb-4 bg-white rounded-xl shadow-sm overflow-hidden">
           <Text className="p-3 text-lg font-semibold">Heatmap</Text>
+          <Text className="px-3 pb-3 text-sm text-gray-600">
+            {recentReports.length > 0 
+              ? `Showing heat map of ${recentReports.length} reports in your area.` 
+              : "No reports available in your area yet."}
+          </Text>
         </View>
 
         {/* Map Preview */}
@@ -289,7 +376,7 @@ const PoliceReport: React.FC = () => {
                     {report.location}
                   </Text>
                 </View>
-                <MapPin className="w-5 h-5 text-gray-400" />
+                <MapPin size={20} />
               </TouchableOpacity>
             ))}
           </ScrollView>

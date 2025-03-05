@@ -15,7 +15,7 @@
       "package": "com.dragapp.app",
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyBKszKsNkyKzy9W4ElaMECzZmFBxTmFuuE"
+          "apiKey": "${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
         }
       },
       "adaptiveIcon": {

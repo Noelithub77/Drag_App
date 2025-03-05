@@ -4,6 +4,7 @@ import '../../global.css';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Markdown from 'react-native-markdown-display';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 
 const LoadingDots = () => {
   const dots = useRef([
@@ -90,7 +91,13 @@ const ChatInterface: React.FC = () => {
     fetchAssessmentAnswers();
   }, []);
 
-  const genAI = new GoogleGenerativeAI("AIzaSyCEaSfr3QRu7xOkt5kMe5DlTxfSqW523Co");
+  // Get API key from Constants or fallback to process.env
+  const apiKey = Constants.expoConfig?.extra?.googleAiApiKey || process.env.EXPO_PUBLIC_GOOGLE_AI_API_KEY || "";
+  
+  // Log for debugging (remove in production)
+  console.log('Google AI API Key exists:', !!apiKey);
+  
+  const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
     model: isMalayalamMode ? "gemini-1.5-pro" : "gemini-1.5-flash",
     systemInstruction: isMalayalamMode
@@ -148,21 +155,21 @@ const ChatInterface: React.FC = () => {
   const handleSend = async (message: string) => {
     if (!message.trim()) return;
     
-    // Set loading state first, before any other operations
+    
     setIsLoading(true);
     setInputText("");
     
-    // Create animations
+    
     const userMessageAnimation = createMessageAnimation();
     const botMessageAnimation = createMessageAnimation();
     
-    // Update chat history with user message
+    
     setChatHistory(prev => [
       ...prev,
       { role: "user", text: message, animation: userMessageAnimation }
     ]);
 
-    // Handle menu and animations after state updates
+    
     if (showMenu) {
       setShowMenu(false);
       Animated.parallel([
@@ -179,7 +186,7 @@ const ChatInterface: React.FC = () => {
       ]).start();
     }
 
-    // Animate user message
+    
     animateMessage(userMessageAnimation);
 
     try {
@@ -231,7 +238,7 @@ const ChatInterface: React.FC = () => {
             {/* Assistance Text Section */}
             <View style={{ alignItems: "center", marginBottom: 16 }}>
               <Image
-                source={require("../../assets/icons/sparkle.png")} // Replace with actual sparkle icon
+                source={require("../../assets/icons/sparkle.png")} 
                 style={{ width: 24, height: 24, marginBottom: 8 }}
               />
               <Text style={{ color: "#4A4A4A", fontSize: 16 }}>
@@ -399,7 +406,7 @@ const ChatInterface: React.FC = () => {
           onPress={() => handleSend(inputText)}
         >
           <Image
-            source={require("../../assets/icons/send.png")} // Replace with actual send icon
+            source={require("../../assets/icons/send.png")} 
             style={{ width: 24, height: 24, tintColor: "white" }}
           />
         </TouchableOpacity>
