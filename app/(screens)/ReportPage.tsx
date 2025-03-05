@@ -24,23 +24,30 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../supabaseConfig';
 import * as FileSystem from 'expo-file-system';
 
-const MapPreview = ({ onRegionChange }: { onRegionChange: (region: Region) => void }) => {
-  const [isLoading, setIsLoading] = useState(true);
+interface ReportData {
+  latitude: number;
+  longitude: number;
+  description: string;
+  created_at: string;
+  image_url?: string;
+  audio_url?: string;
+}
+
+const useLocation = () => {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [region, setRegion] = useState<Region | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
         setIsLoading(true);
         
-        // Check if location services are enabled
         const locationEnabled = await Location.hasServicesEnabledAsync();
         if (!locationEnabled) {
           console.error("Location services are not enabled");
           setErrorMsg('Location services are not enabled. Please enable location services in your device settings.');
-          setIsLoading(false);
           return;
         }
         
@@ -48,12 +55,10 @@ const MapPreview = ({ onRegionChange }: { onRegionChange: (region: Region) => vo
         const cachedRegion = await AsyncStorage.getItem('cachedRegion');
 
         if (cachedLocation && cachedRegion) {
+          const parsedLocation = JSON.parse(cachedLocation);
           const parsedRegion = JSON.parse(cachedRegion);
-          setLocation(JSON.parse(cachedLocation));
+          setLocation(parsedLocation);
           setRegion(parsedRegion);
-          // Notify parent component of the region
-          onRegionChange(parsedRegion);
-          setIsLoading(false);
           return;
         }
 
@@ -63,23 +68,21 @@ const MapPreview = ({ onRegionChange }: { onRegionChange: (region: Region) => vo
           return;
         }
 
-        var location = await Location.getCurrentPositionAsync({
+        const currentLocation = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.High
         });
         
         const newRegion = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
           latitudeDelta: 0.0005,
           longitudeDelta: 0.0005,
         };
         
-        setLocation(location);
+        setLocation(currentLocation);
         setRegion(newRegion);
-        // Notify parent component of the region
-        onRegionChange(newRegion);
 
-        await AsyncStorage.setItem('cachedLocation', JSON.stringify(location));
+        await AsyncStorage.setItem('cachedLocation', JSON.stringify(currentLocation));
         await AsyncStorage.setItem('cachedRegion', JSON.stringify(newRegion));
       } catch (error) {
         console.error('Error fetching location:', error);
@@ -88,7 +91,19 @@ const MapPreview = ({ onRegionChange }: { onRegionChange: (region: Region) => vo
         setIsLoading(false);
       }
     })();
-  }, [onRegionChange]);
+  }, []);
+
+  return { location, region, errorMsg, isLoading, setRegion };
+};
+
+const MapPreview = ({ onRegionChange }: { onRegionChange: (region: Region) => void }) => {
+  const { region, errorMsg, isLoading, setRegion } = useLocation();
+
+  useEffect(() => {
+    if (region) {
+      onRegionChange(region);
+    }
+  }, [region, onRegionChange]);
 
   if (Platform.OS === "web") {
     return (
@@ -121,7 +136,7 @@ const MapPreview = ({ onRegionChange }: { onRegionChange: (region: Region) => vo
   return (
     <MapView
       style={{
-        width: Dimensions.get('window').width - 32, 
+        width: Dimensions.get('window').width - 32,
         height: '100%',
       }}
       provider={Platform.OS === 'ios' || Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
@@ -129,72 +144,17 @@ const MapPreview = ({ onRegionChange }: { onRegionChange: (region: Region) => vo
       showsMyLocationButton={true}
       initialRegion={region}
       region={region}
-      onRegionChangeComplete={(region) => {
-        setRegion(region);
-        onRegionChange(region);
-      }} 
+      onRegionChangeComplete={(newRegion) => {
+        setRegion(newRegion);
+        onRegionChange(newRegion);
+      }}
     />
   );
 };
 
-const useUserRegion = () => {
-  const [region, setRegion] = useState<Region | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        console.log("useUserRegion: Fetching user location...");
-        
-        // Check if location services are enabled
-        const locationEnabled = await Location.hasServicesEnabledAsync();
-        if (!locationEnabled) {
-          console.error("useUserRegion: Location services are not enabled");
-          setErrorMsg('Location services are not enabled. Please enable location services in your device settings.');
-          return;
-        }
-        
-        const cachedRegion = await AsyncStorage.getItem('cachedRegion');
-        if (cachedRegion) {
-          const parsedRegion = JSON.parse(cachedRegion);
-          console.log("useUserRegion: Using cached region:", parsedRegion);
-          setRegion(parsedRegion);
-          return;
-        }
-
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          console.error("useUserRegion: Location permission denied");
-          setErrorMsg('Permission to access location was denied');
-          return;
-        }
-
-        console.log("useUserRegion: Getting current position...");
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High
-        });
-        const newRegion = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          latitudeDelta: 0.0005,
-          longitudeDelta: 0.0005,
-        };
-        console.log("useUserRegion: Got location:", newRegion);
-        setRegion(newRegion);
-        await AsyncStorage.setItem('cachedRegion', JSON.stringify(newRegion));
-      } catch (error) {
-        console.error("useUserRegion: Error fetching location:", error);
-        setErrorMsg('Could not fetch location');
-      }
-    })();
-  }, []);
-
-  return { region, errorMsg };
-};
-
 const ReportPage: React.FC = () => {
   const router = useRouter();
-  const { region, errorMsg } = useUserRegion();
+  const { region, errorMsg } = useLocation();
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [description, setDescription] = useState<string>("");
   const [images, setImages] = useState<string[]>([]);
@@ -204,7 +164,7 @@ const ReportPage: React.FC = () => {
   const [reportRegion, setReportRegion] = useState<Region | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Initialize reportRegion with the region from useUserRegion
+  
   useEffect(() => {
     if (region && !reportRegion) {
       console.log("Setting initial reportRegion from useUserRegion:", region);
@@ -220,14 +180,21 @@ const ReportPage: React.FC = () => {
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images',
       allowsEditing: true,
       aspect: [4, 3],
       quality: 1,
+      exif: false,
     });
 
     if (!result.canceled) {
-      setImages(prev => [...prev, result.assets[0].uri]);
+      try {
+        const asset = result.assets[0];
+        setImages(prev => [...prev, asset.uri]);
+      } catch (error) {
+        console.error('Error processing image:', error);
+        alert('Failed to process image. Please try again with a smaller image.');
+      }
     }
   };
 
@@ -239,13 +206,20 @@ const ReportPage: React.FC = () => {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images',
       allowsEditing: true,
       quality: 1,
+      exif: false,
     });
 
     if (!result.canceled) {
-      setImages(prev => [...prev, result.assets[0].uri]);
+      try {
+        const asset = result.assets[0];
+        setImages(prev => [...prev, asset.uri]);
+      } catch (error) {
+        console.error('Error processing image:', error);
+        alert('Failed to process image. Please try again with a smaller image.');
+      }
     }
   };
 
@@ -333,126 +307,128 @@ const ReportPage: React.FC = () => {
     setReportRegion(region);
   };
 
+  const processAndUploadImage = async (imageUri: string): Promise<string | null> => {
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(imageUri);
+      const fileSize = fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 0;
+      
+      
+      const quality = fileSize > 5 * 1024 * 1024 ? 0.5 : 1;
+      
+      const fileExt = imageUri.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `reports/${fileName}`;
+
+      
+      const chunkSize = 512 * 1024; 
+      let base64Data = '';
+      let offset = 0;
+      
+      while (offset < fileSize) {
+        const chunk = await FileSystem.readAsStringAsync(imageUri, {
+          encoding: FileSystem.EncodingType.Base64,
+          length: chunkSize,
+          position: offset,
+        });
+        base64Data += chunk;
+        offset += chunkSize;
+      }
+
+      const { data: storageData, error: storageError } = await supabase
+        .storage
+        .from('reports')
+        .upload(filePath, decode(base64Data), {
+          contentType: `image/${fileExt}`,
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (storageError) {
+        console.error('Error uploading image:', storageError);
+        return null;
+      }
+
+      const { data: urlData } = supabase
+        .storage
+        .from('reports')
+        .getPublicUrl(filePath);
+      
+      return urlData.publicUrl;
+    } catch (error) {
+      console.error('Error processing image:', error);
+      return null;
+    }
+  };
+
+  const processAndUploadAudio = async (audioUri: string): Promise<string | null> => {
+    try {
+      const fileExt = 'mp4';
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `reports/audio/${fileName}`;
+
+      const base64 = await FileSystem.readAsStringAsync(audioUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const { data: storageData, error: storageError } = await supabase
+        .storage
+        .from('reports')
+        .upload(filePath, decode(base64), {
+          contentType: 'audio/mp4',
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (storageError) {
+        console.error('Error uploading audio:', storageError);
+        return null;
+      }
+
+      const { data: urlData } = supabase
+        .storage
+        .from('reports')
+        .getPublicUrl(filePath);
+      
+      return urlData.publicUrl;
+    } catch (error) {
+      console.error('Error processing audio:', error);
+      return null;
+    }
+  };
+
   const handleSubmit = async () => {
     try {
       console.log("Submitting report...");
       
-      // Use reportRegion if available, otherwise fall back to region from useUserRegion
       const locationRegion = reportRegion || region;
       
       if (!locationRegion) {
         console.error("No location available. reportRegion:", reportRegion, "region:", region);
         alert('Location is not available. Please ensure location services are enabled and try again.');
-        return false; // Return false to indicate submission failed
+        return false;
       }
 
-      // Check if description is empty
       if (!description.trim()) {
         alert('Please provide a description of the report.');
         return false;
       }
 
-      // Create a report object with TypeScript interface
-      interface ReportData {
-        latitude: number;
-        longitude: number;
-        description: string;
-        created_at: string;
-        image_url?: string;
-        audio_url?: string;
-      }
-      
       const reportData: ReportData = {
         latitude: locationRegion.latitude,
         longitude: locationRegion.longitude,
-        description: description || '',
+        description: description.trim(),
         created_at: new Date().toISOString(),
       };
 
-      // Upload image to Supabase Storage if available
-      if (images.length > 0) {
-        try {
-          const imageUri = images[0];
-          const fileExt = imageUri.split('.').pop();
-          const fileName = `${Date.now()}.${fileExt}`;
-          const filePath = `reports/${fileName}`;
-
-          console.log("Uploading image...");
-          
-          // Convert image to base64
-          const base64 = await FileSystem.readAsStringAsync(imageUri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-
-          // Upload to Supabase Storage
-          const { data: storageData, error: storageError } = await supabase
-            .storage
-            .from('reports')
-            .upload(filePath, decode(base64), {
-              contentType: `image/${fileExt}`,
-            });
-
-          if (storageError) {
-            console.error('Error uploading image:', storageError);
-          } else {
-            console.log("Image uploaded successfully");
-            // Get public URL
-            const { data: urlData } = supabase
-              .storage
-              .from('reports')
-              .getPublicUrl(filePath);
-            
-            reportData.image_url = urlData.publicUrl;
-          }
-        } catch (imageError) {
-          console.error("Error processing image:", imageError);
-          // Continue with submission even if image upload fails
-        }
-      }
-
-      // Upload audio to Supabase Storage if available
-      if (audioUri) {
-        try {
-          const fileExt = 'mp4'; // Default extension for expo-av recordings
-          const fileName = `${Date.now()}.${fileExt}`;
-          const filePath = `reports/audio/${fileName}`;
-
-          console.log("Uploading audio...");
-          
-          // Convert audio to base64
-          const base64 = await FileSystem.readAsStringAsync(audioUri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-
-          // Upload to Supabase Storage
-          const { data: storageData, error: storageError } = await supabase
-            .storage
-            .from('reports')
-            .upload(filePath, decode(base64), {
-              contentType: 'audio/mp4',
-            });
-
-          if (storageError) {
-            console.error('Error uploading audio:', storageError);
-          } else {
-            console.log("Audio uploaded successfully");
-            // Get public URL
-            const { data: urlData } = supabase
-              .storage
-              .from('reports')
-              .getPublicUrl(filePath);
-            
-            reportData.audio_url = urlData.publicUrl;
-          }
-        } catch (audioError) {
-          console.error("Error processing audio:", audioError);
-          // Continue with submission even if audio upload fails
-        }
-      }
-
-      console.log("Inserting report data:", reportData);
       
-      // Insert report data into Supabase
+      const [imageUrl, audioUrl] = await Promise.all([
+        images.length > 0 ? processAndUploadImage(images[0]) : Promise.resolve(null),
+        audioUri ? processAndUploadAudio(audioUri) : Promise.resolve(null)
+      ]);
+
+      if (imageUrl) reportData.image_url = imageUrl;
+      if (audioUrl) reportData.audio_url = audioUrl;
+
       const { data, error } = await supabase
         .from('reports')
         .insert(reportData)
@@ -461,33 +437,32 @@ const ReportPage: React.FC = () => {
       if (error) {
         console.error('Error inserting report:', error);
         alert('Failed to submit report: ' + error.message);
-        return false; // Return false to indicate submission failed
-      } else {
-        console.log('Report submitted successfully:', data);
-        alert('Report submitted successfully!');
-        return true; // Return true to indicate submission succeeded
+        return false;
       }
+
+      console.log('Report submitted successfully:', data);
+      return true;
     } catch (e) {
       console.error("Error submitting report: ", e);
       alert('An error occurred while submitting the report');
-      return false; // Return false to indicate submission failed
+      return false;
     }
   };
 
-  // Function to handle submission and navigation
+  
   const handleSubmitAndNavigate = async () => {
-    if (isSubmitting) return; // Prevent multiple submissions
+    if (isSubmitting) return; 
     
     setIsSubmitting(true);
     try {
       const success = await handleSubmit();
       if (success) {
-        // Clear form data after successful submission
+        
         setDescription("");
         setImages([]);
         setAudioUri(null);
         
-        // Show success message and let user navigate manually
+        
         alert('Report submitted successfully! You can now view all reports in the Police Report tab.');
       }
     } catch (error) {
@@ -498,37 +473,45 @@ const ReportPage: React.FC = () => {
     }
   };
 
-  // Improved decode function for binary data conversion
-  const decode = (base64: string) => {
+  
+  const decode = (base64: string): string | Uint8Array => {
     try {
-      // For React Native environment
       if (Platform.OS === 'web' && typeof atob === 'function') {
-        const binaryString = atob(base64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
+        const chunkSize = 1024 * 1024;
+        if (base64.length > chunkSize * 2) {
+          console.log('Processing large base64 data in chunks');
+          const binaryString = atob(base64);
+          const len = binaryString.length;
+          let bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i += chunkSize) {
+            const chunk = Math.min(chunkSize, len - i);
+            for (let j = 0; j < chunk; j++) {
+              bytes[i + j] = binaryString.charCodeAt(i + j);
+            }
+          }
+          return bytes;
+        } else {
+          const binaryString = atob(base64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          return bytes;
         }
-        return bytes;
-      } 
-      // For React Native on mobile
-      else if (Platform.OS === 'ios' || Platform.OS === 'android') {
-        // Use FileSystem's base64 decoding
+      } else if (Platform.OS === 'ios' || Platform.OS === 'android') {
         return base64;
-      }
-      // Fallback for other environments
-      else {
+      } else {
         console.log('Using fallback decode method');
         try {
           const rawData = Buffer.from(base64, 'base64');
           return new Uint8Array(rawData);
         } catch (bufferError) {
           console.error('Buffer fallback failed:', bufferError);
-          return base64; // Return the original base64 string as a last resort
+          return base64;
         }
       }
     } catch (error) {
       console.error('Error decoding base64:', error);
-      // Return the original base64 string as a fallback
       return base64;
     }
   };
@@ -564,8 +547,11 @@ const ReportPage: React.FC = () => {
               </View>
 
               {/* Navigation Link to Police Report */}
-              <Link href="/PoliceReport" asChild>
-                <TouchableOpacity className="mb-6 bg-orange-400 p-3 rounded-xl shadow-sm flex-row justify-center items-center">
+              <Link
+                href={{
+                  pathname: "/PoliceReport",
+                }}
+              >                <TouchableOpacity className="mb-6 bg-orange-400 p-3 rounded-xl shadow-sm flex-row justify-center items-center">
                   <FontAwesome name="map-marker" size={18} color="white" style={{ marginRight: 8 }} />
                   <Text className="text-white text-center font-semibold">View Police Reports</Text>
                 </TouchableOpacity>

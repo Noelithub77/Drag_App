@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { View, Text, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Platform, Image } from "react-native";
 import { MapPin, Settings, RefreshCw } from "lucide-react-native";
 import { Stack } from "expo-router";
@@ -25,7 +25,9 @@ interface Statistics {
   reports: number;
 }
 
-const MapPreview = ({ recentReports }: { recentReports: ReportLocation[] }) => {
+const CACHE_EXPIRY = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+const MapPreview = React.memo(({ recentReports }: { recentReports: ReportLocation[] }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [region, setRegion] = useState<Region | null>(null);
@@ -35,19 +37,20 @@ const MapPreview = ({ recentReports }: { recentReports: ReportLocation[] }) => {
       try {
         setIsLoading(true);
         
-        // Check if location services are enabled
         const locationEnabled = await Location.hasServicesEnabledAsync();
         if (!locationEnabled) {
           console.error("Location services are not enabled");
           setErrorMsg('Location services are not enabled. Please enable location services in your device settings.');
-          setIsLoading(false);
           return;
         }
         
         const cachedLocation = await AsyncStorage.getItem('cachedLocation');
         const cachedRegion = await AsyncStorage.getItem('cachedRegion');
+        const cacheTimestamp = await AsyncStorage.getItem('locationCacheTimestamp');
+        
+        const isCacheValid = cacheTimestamp && (Date.now() - parseInt(cacheTimestamp)) < CACHE_EXPIRY;
 
-        if (cachedLocation && cachedRegion) {
+        if (cachedLocation && cachedRegion && isCacheValid) {
           const parsedRegion = JSON.parse(cachedRegion);
           setRegion(parsedRegion);
           setIsLoading(false);
@@ -60,8 +63,8 @@ const MapPreview = ({ recentReports }: { recentReports: ReportLocation[] }) => {
           return;
         }
 
-        var location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced // Use balanced accuracy for better performance
         });
         
         const newRegion = {
@@ -73,8 +76,11 @@ const MapPreview = ({ recentReports }: { recentReports: ReportLocation[] }) => {
         
         setRegion(newRegion);
 
-        await AsyncStorage.setItem('cachedLocation', JSON.stringify(location));
-        await AsyncStorage.setItem('cachedRegion', JSON.stringify(newRegion));
+        await Promise.all([
+          AsyncStorage.setItem('cachedLocation', JSON.stringify(location)),
+          AsyncStorage.setItem('cachedRegion', JSON.stringify(newRegion)),
+          AsyncStorage.setItem('locationCacheTimestamp', Date.now().toString())
+        ]);
       } catch (error) {
         console.error('Error fetching location:', error);
         setErrorMsg('Could not fetch location');
@@ -83,6 +89,14 @@ const MapPreview = ({ recentReports }: { recentReports: ReportLocation[] }) => {
       }
     })();
   }, []);
+
+  const heatmapPoints = useMemo(() => {
+    return recentReports.map((report: ReportLocation) => ({
+      latitude: report.coordinates.latitude,
+      longitude: report.coordinates.longitude,
+      weight: 1,
+    }));
+  }, [recentReports]);
 
   if (Platform.OS === "web") {
     return (
@@ -115,7 +129,7 @@ const MapPreview = ({ recentReports }: { recentReports: ReportLocation[] }) => {
   return (
     <MapView
       style={{
-        width: Dimensions.get('window').width, // Accounting for padding
+        width: Dimensions.get('window').width,
         height: '100%',
       }}
       provider={Platform.OS === 'ios' || Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
@@ -123,25 +137,62 @@ const MapPreview = ({ recentReports }: { recentReports: ReportLocation[] }) => {
       showsMyLocationButton={true}
       initialRegion={region}
       region={region}
-      onRegionChangeComplete={(region) => setRegion(region)} // Changed to onRegionChangeComplete for better performance
+      onRegionChangeComplete={setRegion}
     >
-      {recentReports && recentReports.length > 0 && (
+      {recentReports.length > 0 && (
         <Heatmap
-          points={recentReports.map((report: ReportLocation) => ({
-            latitude: report.coordinates.latitude,
-            longitude: report.coordinates.longitude,
-            weight: 1,
-          }))}
+          points={heatmapPoints}
           radius={50}
           opacity={0.7}
+          gradient={{
+            colors: ["#00ff00", "#ff0000"],
+            startPoints: [0.2, 0.8],
+            colorMapSize: 2000
+          }}
         />
       )}
     </MapView>
   );
-};
+});
+
+const ReportCard = React.memo(({ report }: { report: ReportLocation }) => (
+  <TouchableOpacity
+    key={report.id}
+    className="flex-row items-center bg-white p-3 rounded-xl mb-3 shadow-sm"
+  >
+    {report.imageUrl ? (
+      <Image
+        source={{ uri: report.imageUrl }}
+        style={{ width: 50, height: 50, borderRadius: 8, marginRight: 10 }}
+      />
+    ) : (
+      <View style={{ width: 50, height: 50, borderRadius: 8, marginRight: 10, backgroundColor: '#ccc' }} />
+    )}
+    <Text className="text-2xl mr-3">{report.icon}</Text>
+    <View className="flex-1">
+      <Text className="font-semibold text-gray-800">
+        {report.title}
+      </Text>
+      <Text className="text-gray-600 text-sm">
+        {report.location}
+      </Text>
+    </View>
+    <MapPin size={20} />
+  </TouchableOpacity>
+));
+
+const StatisticCard = React.memo(({ value, label }: { value: number; label: string }) => (
+  <View className="items-center">
+    <View className="w-16 h-16 rounded-full bg-orange-400 items-center justify-center shadow-lg">
+      <Text className="text-white text-xl font-bold">
+        {value}
+      </Text>
+    </View>
+    <Text className="mt-1 text-gray-600">{label}</Text>
+  </View>
+));
 
 const PoliceReport: React.FC = () => {
-  const [region, setRegion] = useState<Region | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -154,16 +205,30 @@ const PoliceReport: React.FC = () => {
 
   const fetchReports = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('reports')
-        .select('*');
+      const cachedReports = await AsyncStorage.getItem('cachedReports');
+      const cacheTimestamp = await AsyncStorage.getItem('reportsCacheTimestamp');
       
-      if (error) {
-        console.error('Error fetching reports:', error);
-        throw new Error('Could not fetch reports');
+      const isCacheValid = cacheTimestamp && (Date.now() - parseInt(cacheTimestamp)) < CACHE_EXPIRY;
+
+      if (cachedReports && isCacheValid && !isRefreshing) {
+        const parsedReports = JSON.parse(cachedReports);
+        setRecentReports(parsedReports);
+        setStatistics({
+          drugs: Math.floor(parsedReports.length * 0.4),
+          cases: Math.floor(parsedReports.length * 0.3),
+          reports: parsedReports.length,
+        });
+        return;
       }
 
-      if (data && Array.isArray(data)) {
+      const { data, error } = await supabase
+        .from('reports')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+
+      if (data) {
         const reports: ReportLocation[] = data.map((report: any) => ({
           id: report.id || `report-${Date.now()}-${Math.random()}`,
           title: report.description || 'No title',
@@ -173,26 +238,26 @@ const PoliceReport: React.FC = () => {
             latitude: parseFloat(report.latitude) || 0,
             longitude: parseFloat(report.longitude) || 0,
           },
-          imageUrl: report.image_url || '', // Image URL from Supabase Storage
+          imageUrl: report.image_url || '',
         }));
         
         setRecentReports(reports);
-        
-        // Update statistics based on actual reports
         setStatistics({
-          drugs: Math.floor(reports.length * 0.4), // Example: 40% of reports are drug-related
-          cases: Math.floor(reports.length * 0.3), // Example: 30% of reports are cases
-          reports: reports.length, // Total number of reports
+          drugs: Math.floor(reports.length * 0.4),
+          cases: Math.floor(reports.length * 0.3),
+          reports: reports.length,
         });
-      } else {
-        console.warn('No reports data returned from Supabase or data is not an array');
-        setRecentReports([]);
+
+        await Promise.all([
+          AsyncStorage.setItem('cachedReports', JSON.stringify(reports)),
+          AsyncStorage.setItem('reportsCacheTimestamp', Date.now().toString())
+        ]);
       }
     } catch (error) {
       console.error('Error fetching reports:', error);
       throw error;
     }
-  }, []);
+  }, [isRefreshing]);
 
   const handleRefresh = async () => {
     if (isRefreshing) return;
@@ -213,45 +278,10 @@ const PoliceReport: React.FC = () => {
     (async () => {
       try {
         setIsLoading(true);
-        
-        // Check if location services are enabled
-        const locationEnabled = await Location.hasServicesEnabledAsync();
-        if (!locationEnabled) {
-          console.error("Location services are not enabled");
-          setErrorMsg('Location services are not enabled. Please enable location services in your device settings.');
-          setIsLoading(false);
-          return;
-        }
-        
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setErrorMsg('Permission to access location was denied');
-          return;
-        }
-
-        let location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High
-        });
-        
-        const newRegion = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          latitudeDelta: 0.0005,
-          longitudeDelta: 0.0005,
-        };
-        
-        setRegion(newRegion);
-
-        // Fetch recent reports from Supabase
-        try {
-          await fetchReports();
-        } catch (supabaseError) {
-          console.error('Error querying Supabase:', supabaseError);
-          setErrorMsg('Failed to fetch reports from the database');
-        }
+        await fetchReports();
       } catch (error) {
         console.error('Error in PoliceReport useEffect:', error);
-        setErrorMsg('Could not fetch location or reports');
+        setErrorMsg('Could not fetch reports');
       } finally {
         setIsLoading(false);
       }
@@ -274,15 +304,10 @@ const PoliceReport: React.FC = () => {
     );
   }
 
-  if (!region) {
-    return null;
-  }
-
   return (
     <>
       <Stack.Screen options={{ title: "Police Report" }} />
       <View className="flex-1 bg-gray-50">
-        {/* Header */}
         <View className="flex-row justify-between items-center p-4">
           <Text className="text-2xl font-bold text-gray-800">Reports</Text>
           <View className="flex-row">
@@ -303,7 +328,6 @@ const PoliceReport: React.FC = () => {
           </View>
         </View>
 
-        {/* Heatmap Card */}
         <View className="mx-4 mb-4 bg-white rounded-xl shadow-sm overflow-hidden">
           <Text className="p-3 text-lg font-semibold">Heatmap</Text>
           <Text className="px-3 pb-3 text-sm text-gray-600">
@@ -313,71 +337,21 @@ const PoliceReport: React.FC = () => {
           </Text>
         </View>
 
-        {/* Map Preview */}
-        <View style={{ height: 200, marginBottom: 24 }}>
+        <View style={{ height: 300, marginBottom: 24 }}>
           <MapPreview recentReports={recentReports} />
-          {/* Map Markers */}
-          <View className="absolute top-1/2 left-1/2 -translate-x-2 -translate-y-2">
-            <View className="w-4 h-4 bg-orange-400 rounded-full border-2 border-white" />
-          </View>
         </View>
 
-        {/* Statistics */}
         <View className="flex-row justify-around mx-4 mb-4">
-          <View className="items-center">
-            <View className="w-16 h-16 rounded-full bg-orange-400 items-center justify-center shadow-lg">
-              <Text className="text-white text-xl font-bold">
-                {statistics.drugs}
-              </Text>
-            </View>
-            <Text className="mt-1 text-gray-600">drugs</Text>
-          </View>
-          <View className="items-center">
-            <View className="w-16 h-16 rounded-full bg-orange-400 items-center justify-center shadow-lg">
-              <Text className="text-white text-xl font-bold">
-                {statistics.cases}
-              </Text>
-            </View>
-            <Text className="mt-1 text-gray-600">cases</Text>
-          </View>
-          <View className="items-center">
-            <View className="w-16 h-16 rounded-full bg-orange-400 items-center justify-center shadow-lg">
-              <Text className="text-white text-xl font-bold">
-                {statistics.reports}
-              </Text>
-            </View>
-            <Text className="mt-1 text-gray-600">reports</Text>
-          </View>
+          <StatisticCard value={statistics.drugs} label="drugs" />
+          <StatisticCard value={statistics.cases} label="cases" />
+          <StatisticCard value={statistics.reports} label="reports" />
         </View>
 
-        {/* Recent Reports */}
-        <View className="flex-1 mx-4">
+        <View className="flex-1 p-4">
           <Text className="text-lg font-semibold mb-3">Recent Reports</Text>
           <ScrollView className="flex-1">
             {recentReports.map((report) => (
-              <TouchableOpacity
-                key={report.id}
-                className="flex-row items-center bg-white p-3 rounded-xl mb-3 shadow-sm"
-              >
-                {report.imageUrl ? (
-                  <Image
-                    source={{ uri: report.imageUrl }}
-                    style={{ width: 50, height: 50, borderRadius: 8, marginRight: 10 }}
-                  />
-                ) : (
-                  <View style={{ width: 50, height: 50, borderRadius: 8, marginRight: 10, backgroundColor: '#ccc' }} />
-                )}
-                <Text className="text-2xl mr-3">{report.icon}</Text>
-                <View className="flex-1">
-                  <Text className="font-semibold text-gray-800">
-                    {report.title}
-                  </Text>
-                  <Text className="text-gray-600 text-sm">
-                    {report.location}
-                  </Text>
-                </View>
-                <MapPin size={20} />
-              </TouchableOpacity>
+              <ReportCard key={report.id} report={report} />
             ))}
           </ScrollView>
         </View>
