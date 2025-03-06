@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Drag-App",
-    "slug": "Drag-App",
+    "slug": "drag-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -48,8 +48,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "891443c4-6a0e-471f-bdaa-4436b91a9823"
+        "projectId": "7045e04e-310b-45f7-9cbf-44915ee6a304"
       }
-    }
+    },
+    "owner": "noelexpo"
   }
 }

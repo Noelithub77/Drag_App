@@ -40,7 +40,7 @@ const LoginPage: React.FC = () => {
     try {
       const { data } = await supabase.auth.getSession();
       if (data.session) {
-        router.replace('/(tabs)' as any);
+        router.replace('/Home' as any);
       }
     } catch (error) {
       console.error('Error checking user session:', error);
@@ -64,7 +64,7 @@ const LoginPage: React.FC = () => {
 
       if (error) throw error;
       
-      router.replace('/(tabs)' as any);
+      router.replace('/Home' as any);
     } catch (error: any) {
       setError(error.message || 'Failed to sign in');
       console.error('Login error:', error.message);
@@ -105,7 +105,7 @@ const LoginPage: React.FC = () => {
 
       if (error) throw error;
       
-      router.replace('/(tabs)' as any);
+      router.replace('/Home' as any);
     } catch (error: any) {
       setError(error.message || 'Failed to sign in as guest');
       console.error('Anonymous login error:', error.message);

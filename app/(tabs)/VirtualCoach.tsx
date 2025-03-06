@@ -40,7 +40,7 @@ const VirtualCoachScreen = () => {
                     source={require('../../assets/icons/ChallengeIcon.png')} 
                     style={{ width: 32, height: 32, marginBottom: 8 }} 
                   />
-                  <Text className="text-gray-800 font-semibold text-lg text-center">
+                  <Text className="text-gray-800 font-semibold text-[1rem] text-center">
                     Challenge
                   </Text>
                 </View>
@@ -60,7 +60,7 @@ const VirtualCoachScreen = () => {
                     source={require('../../assets/icons/ProgressIcon.png')} 
                     style={{ width: 32, height: 32, marginBottom: 8 }} 
                   />
-                  <Text className="text-gray-800 font-semibold text-lg text-center">
+                  <Text className="text-gray-800 font-semibold text-[1rem] text-center">
                     Progress
                   </Text>
                 </View>
@@ -82,7 +82,7 @@ const VirtualCoachScreen = () => {
                     source={require('../../assets/icons/gamesicon.png')} 
                     style={{ width: 32, height: 32, marginBottom: 8 }} 
                   />
-                  <Text className="text-gray-800 font-semibold text-lg text-center">
+                  <Text className="text-gray-800 font-semibold text-[1rem] text-center">
                     Games
                   </Text>
                 </View>
@@ -102,7 +102,7 @@ const VirtualCoachScreen = () => {
                     source={require('../../assets/icons/coachingicon.png')} 
                     style={{ width: 32, height: 32, marginBottom: 8 }} 
                   />
-                  <Text className="text-gray-800 font-semibold text-lg text-center">
+                  <Text className="text-gray-800 font-semibold text-[1rem] text-center">
                     Coaching
                   </Text>
                 </View>
