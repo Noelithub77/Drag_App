@@ -1,0 +1,7 @@
+<svg width="111" height="120" viewBox="0 0 111 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="55.5" cy="60" r="50" fill="#4f3422"/>
+  <path d="M30.5 40C30.5 40 40.5 30 55.5 30C70.5 30 80.5 40 80.5 40" stroke="#ff995a" stroke-width="6" stroke-linecap="round"/>
+  <path d="M30.5 60C30.5 60 40.5 50 55.5 50C70.5 50 80.5 60 80.5 60" stroke="#ff995a" stroke-width="6" stroke-linecap="round"/>
+  <path d="M30.5 80C30.5 80 40.5 70 55.5 70C70.5 70 80.5 80 80.5 80" stroke="#ff995a" stroke-width="6" stroke-linecap="round"/>
+  <text x="55.5" y="105" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="14" fill="#ffffff">drag</text>
+</svg> 
