@@ -26,9 +26,9 @@ const VirtualCoachScreen = () => {
           </View>
 
           {/* Action Buttons */}
-          <View className="flex-row justify-center space-x-6 mt-5">
+          <View className="flex-row justify-center space-x-6 mt-2">
             {/* Challenge Button */}
-            <View className="items-center mx-2 bg-orange-200 p-5 rounded-lg" style={{ width: 120 }}>
+            <View className="items-center mx-2 bg-orange-200 p-5 rounded-lg" style={{ width: 160 }}>
               <Link
                 href={{
                   pathname: "/Challenge",
@@ -48,7 +48,7 @@ const VirtualCoachScreen = () => {
             </View>
             
             {/* Progress Button */}
-            <View className="items-center mx-2 bg-orange-200 p-5 rounded-lg" style={{ width: 120 }}>
+            <View className="items-center mx-2 bg-orange-200 p-5 rounded-lg" style={{ width: 160 }}>
               <Link
                 href={{
                   pathname: "/ProgressReport",
@@ -70,7 +70,7 @@ const VirtualCoachScreen = () => {
 
           <View className="flex-row justify-center space-x-6 mt-5">
             {/* Games Button */}
-            <View className="items-center mx-2 bg-orange-200 p-5 rounded-lg" style={{ width: 120 }}>
+            <View className="items-center mx-2 bg-orange-200 p-5 rounded-lg" style={{ width: 160 }}>
               <Link
                 href={{
                   pathname: "/Games",
@@ -90,7 +90,7 @@ const VirtualCoachScreen = () => {
             </View>
             
             {/* Coaching Button */}
-            <View className="items-center mx-2 bg-orange-200 p-5 rounded-lg" style={{ width: 120 }}>
+            <View className="items-center mx-2 bg-orange-200 p-5 rounded-lg" style={{ width: 160 }}>
               <Link
                 href={{
                   pathname: "/Coaching",
