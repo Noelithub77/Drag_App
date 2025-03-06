@@ -19,14 +19,14 @@ const StartPage = () => {
     checkUser();
   }, []);
 
-  // Show nothing while checking authentication
+  
   if (isAuthenticated === null) {
     return null;
   }
 
-  // Redirect based on authentication status
+  
   return isAuthenticated ? (
-    <Redirect href="/(tabs)/Home" />
+    <Redirect href="/Home" />
   ) : (
     <Redirect href="/(screens)/LoginPage" />
   );

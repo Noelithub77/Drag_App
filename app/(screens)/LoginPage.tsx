@@ -20,7 +20,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '../../supabaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-
+// Ensure WebBrowser redirects are handled properly
 WebBrowser.maybeCompleteAuthSession();
 
 const LoginPage: React.FC = () => {
@@ -31,7 +31,7 @@ const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  
+  // Check if user is already logged in
   useEffect(() => {
     checkUser();
   }, []);
@@ -81,13 +81,13 @@ const LoginPage: React.FC = () => {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: 'https:
+          redirectTo: 'https://jnopykvwzvukrfufbjtl.supabase.co/auth/v1/callback',
         },
       });
 
       if (error) throw error;
       
-      
+      // The redirect will happen automatically
     } catch (error: any) {
       setError(error.message || 'Failed to sign in with Google');
       console.error('Google login error:', error.message);
