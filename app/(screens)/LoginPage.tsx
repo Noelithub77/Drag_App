@@ -19,9 +19,20 @@ import { FontAwesome } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '../../supabaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  GoogleSignin,
+  GoogleSigninButton,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
+import { EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID } from '@env';
 
-// Ensure WebBrowser redirects are handled properly
 WebBrowser.maybeCompleteAuthSession();
+
+GoogleSignin.configure({
+  scopes: ['profile', 'email'],
+  webClientId: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  offlineAccess: true,
+});
 
 const LoginPage: React.FC = () => {
   const router = useRouter();
@@ -78,19 +89,49 @@ const LoginPage: React.FC = () => {
     setError(null);
 
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      // Check if Play Services are available
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      
+      // Sign in with Google
+      const userInfo = await GoogleSignin.signIn();
+      console.log('Google Sign-In successful:', userInfo);
+      
+      // Get tokens
+      const { idToken } = await GoogleSignin.getTokens();
+      if (!idToken) {
+        throw new Error('No ID token present!');
+      }
+      
+      console.log('Got ID token, signing in with Supabase');
+      
+      // Sign in with Supabase using the ID token
+      const { data, error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
-        options: {
-          redirectTo: 'https://jnopykvwzvukrfufbjtl.supabase.co/auth/v1/callback',
-        },
+        token: idToken,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase sign-in error:', error);
+        throw error;
+      }
       
-      // The redirect will happen automatically
+      console.log('Supabase sign-in successful:', data);
+      router.replace('/Home' as any);
     } catch (error: any) {
-      setError(error.message || 'Failed to sign in with Google');
-      console.error('Google login error:', error.message);
+      console.error('Full Google login error:', error);
+      
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        setError('Sign in was cancelled');
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        setError('Sign in is already in progress');
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        setError('Play services not available or outdated');
+      } else if (error.message && error.message.includes('DEVELOPER_ERROR')) {
+        setError('Developer error: Check your Google API configuration');
+        console.error('DEVELOPER_ERROR details:', error);
+      } else {
+        setError(error.message || 'Failed to sign in with Google');
+      }
     } finally {
       setLoading(false);
     }
@@ -147,7 +188,7 @@ const LoginPage: React.FC = () => {
           
           {/* Login Form */}
           <View style={styles.formContainer}>
-            <Text style={styles.title}>Sign In To freud ai</Text>
+            <Text style={styles.title}>Sign In To drag app</Text>
             
             <View style={styles.inputsContainer}>
               {/* Email Input */}
@@ -213,17 +254,13 @@ const LoginPage: React.FC = () => {
               </TouchableOpacity>
               
               {/* Google Login Button */}
-              <TouchableOpacity
+              <GoogleSigninButton
                 style={styles.googleButton}
+                size={GoogleSigninButton.Size.Wide}
+                color={GoogleSigninButton.Color.Dark}
                 onPress={handleGoogleLogin}
                 disabled={loading}
-              >
-                <View style={styles.buttonContent}>
-                  <Text style={styles.buttonText}>Sign in with Google</Text>
-                  <FontAwesome name="google" size={20} color="#4f3422" />
-                  <FontAwesome name="arrow-right" size={20} color="#fff" />
-                </View>
-              </TouchableOpacity>
+              />
               
               {/* Guest Login Button */}
               <TouchableOpacity
@@ -354,10 +391,6 @@ const styles = StyleSheet.create({
   googleButton: {
     width: '100%',
     height: 56,
-    backgroundColor: '#53a06e',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
     marginTop: 15,
   },
   guestButton: {

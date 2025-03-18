@@ -15,7 +15,7 @@
       "package": "com.dragapp.app",
       "config": {
         "googleMaps": {
-          "apiKey": "${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
+          "apiKey": "AIzaSyBKszKsNkyKzy9W4ElaMECzZmFBxTmFuuE"
         }
       },
       "adaptiveIcon": {
@@ -30,6 +30,14 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "androidApiKey": "AIzaSyBKszKsNkyKzy9W4ElaMECzZmFBxTmFuuE",
+          "scopes": ["profile", "email"],
+          "iosUrlScheme": "com.googleusercontent.apps.560929573475-mv9fqdle9hc7csf271lgklcn0610rurn"
+        }
+      ],
       [
         "expo-splash-screen",
         {

@@ -231,8 +231,12 @@ const ReportPage: React.FC = () => {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        interruptionModeIOS: 1, // Do not mix with other audio
+        interruptionModeAndroid: 1, // Do not mix with other audio
       });
 
+      // Define recording options - always use m4a format for consistency
       const recordingOptions = {
         android: {
           extension: '.m4a',
@@ -241,6 +245,7 @@ const ReportPage: React.FC = () => {
           sampleRate: 44100,
           numberOfChannels: 2,
           bitRate: 128000,
+          maxDuration: 60 * 5 * 1000, // 5 minutes
         },
         ios: {
           extension: '.m4a',
@@ -252,16 +257,28 @@ const ReportPage: React.FC = () => {
           linearPCMBitDepth: 16,
           linearPCMIsBigEndian: false,
           linearPCMIsFloat: false,
+          maxDuration: 60 * 5 * 1000, // 5 minutes
         },
         web: {
           mimeType: 'audio/mp4',
           bitsPerSecond: 128000,
+          maxDuration: 60 * 5 * 1000, // 5 minutes
         },
       };
 
-      console.log('Starting audio recording with options:', recordingOptions);
+      console.log(`Starting audio recording with m4a format for ${Platform.OS} platform`);
       const { recording } = await Audio.Recording.createAsync(recordingOptions);
       setRecording(recording);
+      
+      // Add recording status update listener
+      recording.setOnRecordingStatusUpdate((status) => {
+        if (status.isRecording) {
+          setAudioDuration(status.durationMillis || 0);
+        }
+      });
+      
+      // Start recording status updates
+      recording.setProgressUpdateInterval(500); // Update every 500ms
     } catch (err) {
       console.error('Failed to start recording', err);
       alert(`Failed to start recording: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -269,47 +286,56 @@ const ReportPage: React.FC = () => {
   };
 
   const stopRecording = async () => {
-    setRecording(null);
-    await recording?.stopAndUnloadAsync();
-    const uri = recording?.getURI();
-    setAudioUri(uri || null);
+    if (!recording) {
+      console.warn('No active recording to stop');
+      return;
+    }
+    
+    try {
+      console.log('Stopping recording...');
+      
+      // Stop the recording
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+      
+      if (!uri) {
+        console.error('Failed to get URI from recording');
+        alert('Failed to save recording. Please try again.');
+        return;
+      }
+      
+      setAudioUri(uri);
 
-    if (uri) {
       try {
         const fileInfo = await FileSystem.getInfoAsync(uri);
         
-        // Try to get the file extension from the URI
-        const extension = uri.split('.').pop()?.toLowerCase();
+        // Get audio duration using Sound
+        const { sound } = await Audio.Sound.createAsync({ uri });
+        const status = await sound.getStatusAsync();
+        const durationMillis = status.isLoaded ? status.durationMillis || 0 : 0;
+        setAudioDuration(durationMillis);
+        
+        // Unload the sound to free resources
+        await sound.unloadAsync();
         
         // Log detailed information about the audio file
         console.log('Audio recording completed:', {
           uri,
           exists: fileInfo.exists,
-          size: fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 'unknown',
-          extension: extension || 'unknown',
+          size: fileInfo.exists && 'size' in fileInfo ? `${(fileInfo.size / 1024 / 1024).toFixed(2)} MB` : 'unknown',
+          duration: `${(durationMillis / 1000).toFixed(2)} seconds`,
+          format: 'm4a', // We're using m4a format consistently
+          contentType: 'audio/mp4',
           platform: Platform.OS,
-          // On iOS, the URI typically looks like: file:///var/mobile/Containers/Data/Application/...
-          // On Android, it typically looks like: file:///data/user/0/com.yourapp/cache/...
-          isFileUri: uri.startsWith('file://'),
-          isContentUri: uri.startsWith('content://'),
-          isAssetUri: uri.startsWith('asset://'),
         });
-        
-        // For iOS, the file extension might not be in the URI
-        if (Platform.OS === 'ios' && (!extension || extension.length > 4)) {
-          console.log('iOS audio file detected, using m4a extension');
-        }
       } catch (error) {
         console.error('Error getting audio file info:', error);
+        // Continue anyway since we have the URI
       }
-    }
-
-    const { status } = await Audio.Sound.createAsync(
-      { uri: uri as string },
-      { shouldPlay: false }
-    );
-    if (status.isLoaded) {
-      setAudioDuration(status.durationMillis || 0);
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+      alert(`Failed to stop recording: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -322,11 +348,10 @@ const ReportPage: React.FC = () => {
   };
 
   const renderWaveform = () => {
-    
     return (
       <View style={{ width: '100%', height: 50, backgroundColor: '#E1E1E1', borderRadius: 8 }}>
         <Text style={{ textAlign: 'center', lineHeight: 50, color: '#4A4A4A' }}>
-          recorded audio (Duration: {Math.round(audioDuration / 1000)}s)
+          Audio recording (m4a) - {Math.round(audioDuration / 1000)}s
         </Text>
       </View>
     );
@@ -343,30 +368,29 @@ const ReportPage: React.FC = () => {
       const fileInfo = await FileSystem.getInfoAsync(imageUri);
       const fileSize = fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 0;
       
+      if (!fileInfo.exists) {
+        throw new Error('Image file does not exist');
+      }
+
+      if (fileSize === 0) {
+        throw new Error('Image file is empty');
+      }
+
+      console.log('Image file info:', {
+        uri: imageUri,
+        size: fileSize,
+        modificationTime: 'modificationTime' in fileInfo ? fileInfo.modificationTime : undefined
+      });
+      
       // Get proper file extension and MIME type
       let fileExt = imageUri.split('.').pop()?.toLowerCase();
       
       // Check if we have a valid extension from the URI
       const validImageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
       
-      // If no extension or invalid extension, try to determine from URI content
+      // Default to jpg if no valid extension found
       if (!fileExt || !validImageExts.includes(fileExt)) {
-        // For iOS, the URI might be like: file:///var/mobile/Containers/Data/Application/...
-        // For Android, it might be like: file:///data/user/0/com.yourapp/cache/...
-        
-        // Check if the URI contains image type info
-        if (imageUri.includes('image/jpeg') || imageUri.includes('image/jpg')) {
-          fileExt = 'jpg';
-        } else if (imageUri.includes('image/png')) {
-          fileExt = 'png';
-        } else if (imageUri.includes('image/gif')) {
-          fileExt = 'gif';
-        } else if (imageUri.includes('image/webp')) {
-          fileExt = 'webp';
-        } else {
-          // Default to jpg for most common case
-          fileExt = 'jpg';
-        }
+        fileExt = 'jpg';
       }
       
       // Determine correct MIME type based on extension
@@ -382,14 +406,14 @@ const ReportPage: React.FC = () => {
       }
       
       // Read a small chunk to detect MIME type from file header
-      const sampleChunk = await FileSystem.readAsStringAsync(imageUri, {
+      const headerChunk = await FileSystem.readAsStringAsync(imageUri, {
         encoding: FileSystem.EncodingType.Base64,
-        length: 1024, // Just need a small sample
+        length: 1024, // Just need a small sample for header detection
         position: 0,
       });
       
       // Try to detect MIME type from file header
-      const detectedMimeType = detectMimeType(sampleChunk);
+      const detectedMimeType = detectMimeType(headerChunk);
       if (detectedMimeType) {
         contentType = detectedMimeType;
         // Update extension based on detected MIME type
@@ -401,6 +425,8 @@ const ReportPage: React.FC = () => {
           fileExt = 'gif';
         } else if (detectedMimeType === 'image/webp') {
           fileExt = 'webp';
+        } else if (detectedMimeType === 'image/heic') {
+          fileExt = 'heic';
         }
       }
       
@@ -415,18 +441,33 @@ const ReportPage: React.FC = () => {
       });
       
       // Read file in chunks to handle large files
-      const chunkSize = 512 * 1024;
-      let base64Data = '';
-      let offset = 0;
+      let base64Data: string;
       
-      while (offset < fileSize) {
-        const chunk = await FileSystem.readAsStringAsync(imageUri, {
+      if (fileSize > 5 * 1024 * 1024) { // If larger than 5MB, read in chunks
+        console.log('Large image file detected, reading in chunks');
+        const chunkSize = 1024 * 1024; // 1MB chunks
+        let base64Chunks = '';
+        let offset = 0;
+        
+        while (offset < fileSize) {
+          const chunk = await FileSystem.readAsStringAsync(imageUri, {
+            encoding: FileSystem.EncodingType.Base64,
+            length: Math.min(chunkSize, fileSize - offset),
+            position: offset,
+          });
+          base64Chunks += chunk;
+          offset += chunkSize;
+          
+          // Log progress for large files
+          if (offset % (5 * chunkSize) === 0) {
+            console.log(`Image upload progress: ${Math.round((offset / fileSize) * 100)}%`);
+          }
+        }
+        base64Data = base64Chunks;
+      } else {
+        base64Data = await FileSystem.readAsStringAsync(imageUri, {
           encoding: FileSystem.EncodingType.Base64,
-          length: chunkSize,
-          position: offset,
         });
-        base64Data += chunk;
-        offset += chunkSize;
       }
 
       console.log('Attempting to upload image:', {
@@ -444,7 +485,6 @@ const ReportPage: React.FC = () => {
         });
 
       if (storageError) {
-        console.log('Storage error:', storageError);
         console.error('Storage error:', storageError);
         console.error('Supabase storage error:', {
           message: storageError.message,
@@ -476,76 +516,60 @@ const ReportPage: React.FC = () => {
       const fileInfo = await FileSystem.getInfoAsync(audioUri);
       const fileSize = fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 0;
 
-      // For Expo Audio recordings, we know the format from our recording options
-      // Default to m4a which is what we set in startRecording
-      let fileExt = 'm4a';
-      let contentType = 'audio/mp4';
-      
-      // Try to extract extension from URI if possible
-      const uriExt = audioUri.split('.').pop()?.toLowerCase();
-      const validAudioExts = ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'mp4'];
-      
-      if (uriExt && validAudioExts.includes(uriExt)) {
-        fileExt = uriExt;
-        
-        // Set content type based on extension
-        if (fileExt === 'm4a' || fileExt === 'mp4') {
-          contentType = 'audio/mp4';
-        } else if (fileExt === 'mp3') {
-          contentType = 'audio/mpeg';
-        } else if (fileExt === 'wav') {
-          contentType = 'audio/wav';
-        } else if (fileExt === 'aac') {
-          contentType = 'audio/aac';
-        } else if (fileExt === 'ogg') {
-          contentType = 'audio/ogg';
-        }
-      } else {
-        // If we can't determine from URI, check if URI contains audio type info
-        if (audioUri.includes('audio/mp4') || audioUri.includes('audio/m4a')) {
-          fileExt = 'm4a';
-          contentType = 'audio/mp4';
-        } else if (audioUri.includes('audio/mpeg') || audioUri.includes('audio/mp3')) {
-          fileExt = 'mp3';
-          contentType = 'audio/mpeg';
-        } else if (audioUri.includes('audio/wav')) {
-          fileExt = 'wav';
-          contentType = 'audio/wav';
-        } else if (audioUri.includes('audio/aac')) {
-          fileExt = 'aac';
-          contentType = 'audio/aac';
-        }
-        // Otherwise stick with our default m4a
+      if (!fileInfo.exists) {
+        throw new Error('Audio file does not exist');
       }
 
-      // For audio, we don't need to read in chunks as they're typically smaller
-      const base64 = await FileSystem.readAsStringAsync(audioUri, {
-        encoding: FileSystem.EncodingType.Base64,
+      if (fileSize === 0) {
+        throw new Error('Audio file is empty');
+      }
+
+      console.log('Audio file info:', {
+        uri: audioUri,
+        size: fileSize,
+        modificationTime: 'modificationTime' in fileInfo ? fileInfo.modificationTime : undefined
       });
-      
-      // Try to detect MIME type from file header
-      const detectedMimeType = detectMimeType(base64.substring(0, 20));
-      if (detectedMimeType) {
-        contentType = detectedMimeType;
-        // Update extension based on detected MIME type
-        if (detectedMimeType === 'audio/mp4') {
-          fileExt = 'm4a';
-        } else if (detectedMimeType === 'audio/mpeg') {
-          fileExt = 'mp3';
-        } else if (detectedMimeType === 'audio/wav') {
-          fileExt = 'wav';
-        }
-      }
 
+      // Always use m4a format for consistency
+      const fileExt = 'm4a';
+      const contentType = 'audio/mp4';
       const fileName = `${Date.now()}.${fileExt}`;
 
-      console.log('Audio details:', {
-        originalUri: audioUri,
-        determinedExtension: fileExt,
-        contentType: contentType,
-        detectedMimeType: detectedMimeType || 'none',
-        fileSize: fileSize / 1024 / 1024 + 'MB'
+      console.log('Using standardized audio format:', {
+        extension: fileExt,
+        contentType: contentType
       });
+
+      // For audio, we don't need to read in chunks as they're typically smaller
+      // But we'll add a size check just in case
+      let base64Data: string;
+      
+      if (fileSize > 10 * 1024 * 1024) { // If larger than 10MB, read in chunks
+        console.log('Large audio file detected, reading in chunks');
+        const chunkSize = 1024 * 1024; // 1MB chunks
+        let base64Chunks = '';
+        let offset = 0;
+        
+        while (offset < fileSize) {
+          const chunk = await FileSystem.readAsStringAsync(audioUri, {
+            encoding: FileSystem.EncodingType.Base64,
+            length: Math.min(chunkSize, fileSize - offset),
+            position: offset,
+          });
+          base64Chunks += chunk;
+          offset += chunkSize;
+          
+          // Log progress for large files
+          if (offset % (5 * chunkSize) === 0) {
+            console.log(`Audio upload progress: ${Math.round((offset / fileSize) * 100)}%`);
+          }
+        }
+        base64Data = base64Chunks;
+      } else {
+        base64Data = await FileSystem.readAsStringAsync(audioUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      }
 
       console.log('Attempting to upload audio:', {
         fileName,
@@ -556,7 +580,7 @@ const ReportPage: React.FC = () => {
       const { data: storageData, error: storageError } = await supabase
         .storage
         .from('reports')
-        .upload(fileName, decode(base64), {
+        .upload(fileName, decode(base64Data), {
           contentType: contentType,
           upsert: true
         });
@@ -662,35 +686,54 @@ const ReportPage: React.FC = () => {
   
   const decode = (base64: string): string | Uint8Array => {
     try {
+      if (!base64 || base64.length === 0) {
+        console.warn('Empty base64 string provided to decode');
+        return new Uint8Array(0);
+      }
+
       if (Platform.OS === 'web' && typeof atob === 'function') {
-        const chunkSize = 1024 * 1024;
-        if (base64.length > chunkSize * 2) {
-          console.log('Processing large base64 data in chunks');
-          const binaryString = atob(base64);
-          const len = binaryString.length;
-          let bytes = new Uint8Array(len);
-          for (let i = 0; i < len; i += chunkSize) {
-            const chunk = Math.min(chunkSize, len - i);
-            for (let j = 0; j < chunk; j++) {
-              bytes[i + j] = binaryString.charCodeAt(i + j);
+        try {
+          // For web, convert base64 to Uint8Array
+          const chunkSize = 1024 * 1024; // Process 1MB at a time to avoid memory issues
+          if (base64.length > chunkSize * 2) {
+            console.log(`Processing large base64 data in chunks (${(base64.length / (1024 * 1024)).toFixed(2)}MB)`);
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            let bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i += chunkSize) {
+              const chunk = Math.min(chunkSize, len - i);
+              for (let j = 0; j < chunk; j++) {
+                bytes[i + j] = binaryString.charCodeAt(i + j);
+              }
             }
+            return bytes;
+          } else {
+            const binaryString = atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes;
           }
-          return bytes;
-        } else {
-          const binaryString = atob(base64);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          return bytes;
+        } catch (webError) {
+          console.error('Error in web decode path:', webError);
+          // Fall back to returning the base64 string
+          return base64;
         }
       } else if (Platform.OS === 'ios' || Platform.OS === 'android') {
+        // For mobile platforms, Supabase can handle the base64 string directly
         return base64;
       } else {
-        console.log('Using fallback decode method');
+        console.log('Using fallback decode method for platform:', Platform.OS);
         try {
-          const rawData = Buffer.from(base64, 'base64');
-          return new Uint8Array(rawData);
+          // Try to use Buffer if available (Node.js environments)
+          if (typeof Buffer !== 'undefined') {
+            const rawData = Buffer.from(base64, 'base64');
+            return new Uint8Array(rawData);
+          } else {
+            // Last resort fallback
+            return base64;
+          }
         } catch (bufferError) {
           console.error('Buffer fallback failed:', bufferError);
           return base64;
@@ -705,43 +748,61 @@ const ReportPage: React.FC = () => {
   // Helper function to detect MIME type from file header
   const detectMimeType = (base64Data: string): string | null => {
     try {
+      if (!base64Data || base64Data.length < 8) {
+        return null;
+      }
+
       // Check the first few bytes of the file to determine its type
-      // This is a simple implementation - a more robust solution would check more signatures
-      const header = base64Data.substring(0, 20);
+      // This is a more robust implementation checking more signatures
       
       // JPEG starts with /9j/
-      if (header.startsWith('/9j/')) {
+      if (base64Data.startsWith('/9j/')) {
         return 'image/jpeg';
       }
       
       // PNG starts with iVBORw0KGgo
-      if (header.startsWith('iVBORw0KGgo')) {
+      if (base64Data.startsWith('iVBORw0KGgo')) {
         return 'image/png';
       }
       
       // GIF starts with R0lGODlh or R0lGODdh
-      if (header.startsWith('R0lGODlh') || header.startsWith('R0lGODdh')) {
+      if (base64Data.startsWith('R0lGODlh') || base64Data.startsWith('R0lGODdh')) {
         return 'image/gif';
       }
       
       // WebP starts with UklGRl
-      if (header.startsWith('UklGRl')) {
+      if (base64Data.startsWith('UklGRl')) {
         return 'image/webp';
       }
       
+      // HEIC often starts with AAAA
+      if (base64Data.startsWith('AAAA') && !base64Data.includes('ftyp')) {
+        return 'image/heic';
+      }
+      
       // MP3 often starts with ID3 (SUQz)
-      if (header.startsWith('SUQz')) {
+      if (base64Data.startsWith('SUQz') || base64Data.startsWith('ID3')) {
         return 'audio/mpeg';
       }
       
-      // AAC/M4A often starts with AAAA
-      if (header.startsWith('AAAA')) {
+      // AAC/M4A often starts with AAAA and contains ftyp
+      if (base64Data.startsWith('AAAA') && base64Data.includes('ftyp')) {
         return 'audio/mp4';
       }
       
-      // WAV starts with UklGRg
-      if (header.startsWith('UklGRg')) {
+      // WAV starts with UklGRg or contains WAVE
+      if (base64Data.startsWith('UklGRg') || base64Data.includes('WAVE')) {
         return 'audio/wav';
+      }
+      
+      // OGG starts with T2dn
+      if (base64Data.startsWith('T2dn')) {
+        return 'audio/ogg';
+      }
+      
+      // FLAC starts with ZkxhQw
+      if (base64Data.startsWith('ZkxhQw')) {
+        return 'audio/flac';
       }
       
       // If we can't determine the type, return null
