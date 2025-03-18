@@ -24,13 +24,12 @@ import {
   GoogleSigninButton,
   statusCodes,
 } from '@react-native-google-signin/google-signin';
-import { EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID } from '@env';
 
 WebBrowser.maybeCompleteAuthSession();
 
 GoogleSignin.configure({
-  scopes: ['profile', 'email'],
-  webClientId: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  // iosClientId: EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
   offlineAccess: true,
 });
 
@@ -89,7 +88,6 @@ const LoginPage: React.FC = () => {
     setError(null);
 
     try {
-      // Check if Play Services are available
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       
       // Sign in with Google
@@ -104,7 +102,6 @@ const LoginPage: React.FC = () => {
       
       console.log('Got ID token, signing in with Supabase');
       
-      // Sign in with Supabase using the ID token
       const { data, error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
         token: idToken,
